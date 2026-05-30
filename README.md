@@ -7,12 +7,15 @@ Information you need if you are not familiar with post-quantum world
 - What is Stateful Signature Scheme? [link](https://github.com/gh4rib/pqc-pki-messenger/blob/main/stateful-signature-scheme.md)
 - What is Extendable-Output Functions ? [link](https://github.com/gh4rib/pqc-pki-messenger/blob/main/xof.md)
 - What is Ascon v1.2 ? [link](https://github.com/gh4rib/pki-pqc-messenger/blob/main/ascon-vs-aes.md)
+
 ---
 
 ## Requirements
 - OpenSSL 3.5+ (Debian/13.5 has this by default)
 - `` apt install gcc build-essential expect xxd git ``
 - Compile the Open-Quantum-Safe ``liboqs`` & ``oqs-provider`` to use them with openssl
+
+---
 
 ## Compile liboqs & oqs-provider
 - Compiling liboqs
@@ -87,10 +90,10 @@ the result of the script.
 ### Procedure
 Modern X.509 Architecture Note
 
-- Root CA Key: Must use an asymmetric Signature scheme (like ML-DSA, Falcon, or SLH-DSA) to allow it to sign certificates.
-- Website/Server Key: Can either be an asymmetric Signature scheme (for classic authentication) or a KEM scheme (for key exchange optimization).
-- Symmetric Protection: When saving private keys, the script allows you to encrypt them using ChaCha20, AES-256-CBC, or Camellia-256-CBC.
-- MACs (HMAC, SipHash, Poly1305, CMAC): These are symmetric Message Authentication Codes and do not utilize asymmetric public/private keys; therefore, they cannot be embedded into X.509 certificates. They are omitted from the certificate menu but noted for symmetric data integrity.
+- **Root CA Key:** Must use an asymmetric Signature scheme (like ML-DSA, Falcon, or SLH-DSA) to allow it to sign certificates.
+- **Website/Server Key:** Can either be an asymmetric Signature scheme (for classic authentication) or a KEM scheme (for key exchange optimization).
+- **Symmetric Protection:** When saving private keys, the script allows you to encrypt them using ChaCha20, AES-256-CBC, or Camellia-256-CBC.
+- **MACs (HMAC, SipHash, Poly1305, CMAC):** These are symmetric Message Authentication Codes and do not utilize asymmetric public/private keys; therefore, they cannot be embedded into X.509 certificates. They are omitted from the certificate menu but noted for symmetric data integrity.
 
 ### The ``pki-engine-script``
 - The script guide you and create a folder containing ``ca.cert,ca.key,server.crt,server.key,server.pub``
@@ -382,3 +385,189 @@ Q
 DONE
 
 ```
+
+---
+
+## PQC Simple Messenger
+A Simple mirror (probably not safe for production usage) of signalMessenger and protonMail.
+
+### The "Signal/Proton" Architecture Here
+
+1. **The Key Generation (Identity Setup)**
+Just like setting up a ProtonMail account, you generate two distinct keys:
+
+- **The Identity Key (DSA):** E.g., ``MLDSA87``. Used only to sign messages to prove you wrote them.
+- **The Envelope Key (KEM):** E.g., ``MLKEM1024``. Used only to allow other people to encapsulate a secret that only you can open.
+
+2. **The Sending Process (Encrypt-then-Sign via AEAD)**
+When you send a file to Bob, the script does exactly what Signal does:
+
+- **KEM Encapsulation:** It uses Bob's public MLKEM key to generate a random 256-bit Shared Secret (the ephemeral session key).
+- **Symmetric AEAD Encryption:** It uses that Shared Secret to encrypt your message using a military-grade AEAD cipher (like ``aes-256-gcm`` or ``chacha20-poly1305``). Crucially, AEAD ciphers generate an Authentication Tag. This tag mathematically proves the ciphertext has not been tampered with.
+- **The Digital Signature:** It calculates a strong hash `e.g., ``SHA3-512`` or ``KECCAK-512``) of the ciphertext and the AEAD Tag, and signs that hash with your private MLDSA key.
+
+3. **The Receiving Process (Verify-then-Decrypt)**
+When Bob receives the folder, the script reverses the process in strict order to prevent cryptographic attacks (like Padding Oracles):
+- **Identity Verification:** It verifies the signature against the hash of the ciphertext. If it fails, it drops the file immediately.
+- **KEM Decapsulation:** It uses Bob's private MLKEM key to extract the 256-bit Shared Secret.
+- **AEAD Integrity Check & Decrypt:** It passes the Shared Secret, Ciphertext, and AEAD Tag into the symmetric cipher. If the tag doesn't match, decryption fails. If it matches, you get the plaintext.
+
+4. **A Double Ratchet algorithm (like Signal)**
+Every time you send a message, generate a brand new ephemeral KEM keypair, attach the public key to the message, and use it to negotiate a new shared secret.
+This guarantees Perfect Forward Secrecy (PFS) and Post-Compromise Security (PCS).
+
+### My Architecture
+**The OpenSSL Problem** : 
+In standard OpenSSL, when you use a block cipher like aes-256-cbc, it encrypts the file and exits gracefully.
+
+However, with AEAD ciphers like aes-256-gcm, OpenSSL has to do two things simultaneously:
+- Write the ciphertext to ``payload.cipher``.
+- Extract the Authentication MAC and write it to ``payload.tag`` using standard output (the ``> payload.tag`` part of the command).
+
+I changed the architecture a little bit! I have used the Encrypt-then-MAC architecture. This is precisely how the Signal Protocol (v2) and IPsec establish Authenticated Encryption.
+
+Instead of asking OpenSSL to do the encryption and the tagging in one step, I have separated them:
+- I use the KEM Secret to generate two keys: an Encryption Key and a MAC Key.
+- I encrypt the payload using a rock-solid standard cipher (aes-256-cbc or chacha20).
+- I explicitly calculate a Hash-based Message Authentication Code (HMAC) over the ciphertext. This serves as our mathematically perfect AEAD Tag.
+- I sign the whole bundle with the Post-Quantum Identity.
+
+In addition to this I implemented the following capabilities into the script
+- SPHINCS+ (SLH-DSA): The most mathematically conservative hash-based signature scheme in existence, perfect for long-term Root Identity.
+- Hybrid Key Exchange (X25519 + ML-KEM): Implementing a true safety net where an attacker must break both classic elliptic curves and quantum lattices to read your messages.
+- Cryptographic Fingerprinting: Giving the user the ability to generate short, verifiable hashes of the giant public keys to share on Social Platforms.
+
+**Note on the Double Ratchet: Implementing a full asynchronous Double Ratchet algorithm like Signal in a stateless bash script is architecturally impossible because it requires maintaining synchronous state chains (Root Chain, Sending Chain, Receiving Chain) across multiple file executions. However, I have implemented Ephemeral Hybrid Forward Secrecy per message, which is the foundational step of the Ratchet.**
+
+### The flow of Messaging (High-Level)
+Exact flow requires a tiny bit of coordination between you and your friend.
+
+Here is the exact, step-by-step procedure of how you and a friend (let's call him Bob) will use this engine in the real world:
+
+#### Step 1: Establish Identities (Both Users)
+
+- **You:** Run the script, select **Option 1**, and create `identity_daud`.
+- **Bob:** Runs the script on his computer, selects **Option 1**, and creates `identity_bob`.
+
+#### Step 2: The Key Exchange (Public Sharing)
+
+- You send Bob your **Public Keyring Folder** (`./identity_daud/public/`).
+- Bob sends you his **Public Keyring Folder** (`./identity_bob/public/`).
+- (Note: You can send these folders over email, USB drive, or host them on a website. They are 100% public and safe to share).
+
+#### Step 3: Fingerprint Verification (Crucial Security Step)
+- You run **Option 2** (Generate Cryptographic Fingerprints) on Bob's public folder to get the short hashes.
+- You text/call Bob: **"Hey Bob, I got your keys. Is this your Signature Fingerprint a1:b2:c3....?"**
+- If he says yes, you know the keys are authentic.
+
+#### Step 4: Encrypt & Sign (Sending)
+
+Now you want to send Bob a secret message (`message1.txt`).
+- You run **Option 3** (Encrypt & Sign).
+- When the script asks for **YOUR Private Keyring**, you point it to `./identity_daud/private`. (This allows you to sign the message).
+- When the script asks for the **RECIPIENT'S Public Keyring**, you point it to the `./identity_bob/public` folder he gave you in Step 2. (This locks the message so only Bob can read it).
+- The script spits out a locked folder: `outbox_msg_2026...`
+
+#### Step 5: Transmission
+
+- You send that `outbox_msg` folder to Bob over email, Telegram, or a USB drive. Even if the NSA intercepts it, they cannot read it.
+
+#### Step 6: Decrypt & Verify (Receiving)
+
+Bob receives your locked folder.
+
+- He runs **Option 4** (Decrypt & Verify).
+- When the script asks for **HIS Private Keyring**, he points it to `./identity_bob/private`. (This unlocks the KEM).
+- When the script asks for the **SENDER'S Public Keyring**, he points it to the `./identity_daud/public` folder you gave him in Step 2. (This verifies your signature).
+- The script safely spits out `decrypted_message.txt`.
+
+### The flow of Messaging (Low-Level)
+The script **strictly verifies the signature** before **doing anything** else during decryption. If the signature is invalid (meaning the message was tampered with, or the sender is an imposter), the script instantly throws a red `CRITICAL` alert and hard-exits, refusing to decrypt the payload. This prevents attackers from feeding your KEM malicious data.
+
+
+#### Option 1: Identity Generation Architecture
+
+This phase creates your long-term cryptographic identity. Because we are using a **Hybrid** architecture, you actually generate three separate mathematical keys.
+
+1. **The Classical Routing Key (X25519):**
+- **Purpose:** A proven, fast Elliptic Curve Diffie-Hellman (ECDH) key. This acts as our classical safety net.
+- **Math:** `openssl genpkey -algorithm X25519`
+
+
+2. **The Post-Quantum Routing Key (ML-KEM):**
+- **Purpose:** A lattice-based Key Encapsulation Mechanism. This protects against Future Quantum Computers (Store Now, Decrypt Later attacks).
+- **Math:** `openssl genpkey -algorithm MLKEM1024`
+
+
+3. **The Identity Key (SLH-DSA / SPHINCS+):**
+- **Purpose:** A hyper-conservative, hash-based digital signature algorithm. You use this to "sign" your messages to prove you wrote them.
+- **Math:** `openssl genpkey -algorithm SLH-DSA-SHA2-256s`
+
+
+
+**Output State:** You now have a `./private` folder (which you guard with your life) and a `./public` folder (which you share with the world).
+
+
+#### Option 3: Encryption & Signing Architecture (The Sender)
+
+This is the most complex phase. It implements a true **Hybrid KEX + Encrypt-then-MAC** pipeline. Assume Alice is sending a message to Bob.
+
+1. **Hybrid Key Exchange (KEX):**
+- Alice takes Bob's public `X25519` key and her private `X25519` key to mathematically derive a 32-byte shared secret (`classic_secret.bin`).
+- Alice uses Bob's public `ML-KEM` key to encapsulate a random 32-byte post-quantum secret (`pq_secret.bin`). She must send the resulting "capsule" (`pq_payload.encap`) to Bob.
+
+
+2. **Key Derivation Function (KDF):**
+- Alice concatenates the two secrets: `[Classic 32B] + [PQ 32B]`.
+- She hashes them together using SHA-512 to create a master 64-byte secret string.
+- She splits it: The first 32 bytes become the **AES Encryption Key** (`HEX_KEY`). The second 32 bytes become the **HMAC Authentication Key** (`MAC_KEY`).
+
+
+3. **Symmetric Encryption (The Payload):**
+- Alice generates a random 16-byte Initialization Vector (IV).
+- She encrypts her message using `aes-256-cbc` and the `HEX_KEY`. This creates the `payload.cipher`.
+
+
+4. **The AEAD Authentication Tag (HMAC):**
+- Alice hashes the `payload.cipher` using SHA-256, keyed with her `MAC_KEY`. This creates the `payload.tag`. This tag mathematically proves the ciphertext has not been altered.
+
+
+5. **The Digital Signature (Identity Proof):**
+- Alice concatenates the Ciphertext, the IV, the Tag, and *her public X25519 key* into a single bundle.
+- She signs that bundle using her private `SLH-DSA` key to create `payload.sig`.
+- **(Note: She includes her public X25519 key in the signature so Bob knows exactly who to derive the classical secret with, preventing Man-in-the-Middle attacks).**
+
+
+
+**Output State:** Alice sends Bob a folder containing: `payload.cipher`, `payload.iv`, `payload.tag`, `payload.sig`, `pq_payload.encap`, and `sender_x25519.pub`.
+
+
+#### Option 4: Decryption & Verification Architecture (The Receiver)
+
+This phase strictly reverses the encryption steps. **Crucially, it verifies authenticity before attempting any decryption.**
+
+1. **Identity Verification (The Gatekeeper):**
+- Bob re-creates the exact same bundle Alice signed (Ciphertext + IV + Tag + Sender's X25519 Pubkey).
+- He uses Alice's public `SLH-DSA` key to verify `payload.sig`.
+- **SECURITY CHECK:** If this fails, the script immediately prints a red `CRITICAL` error and exits. The sender is fake or the message was tampered with in transit.
+
+
+2. **Hybrid Key Decapsulation:**
+- Bob uses his private `X25519` key and Alice's provided public `X25519` key to derive the `classic_secret.bin`.
+- Bob uses his private `ML-KEM` key to open the `pq_payload.encap` and extract the `pq_secret.bin`.
+
+
+3. **Key Derivation Function (KDF):**
+- Bob performs the exact same hash (SHA-512) on the combined secrets to regenerate the `HEX_KEY` and the `MAC_KEY`.
+
+
+4. **AEAD Integrity Check:**
+- Bob calculates his own HMAC over the `payload.cipher` using the derived `MAC_KEY`.
+- He compares his calculated tag against the `payload.tag` Alice sent.
+- **SECURITY CHECK:** If they do not match exactly, the script prints a red `CRITICAL` error and exits. The ciphertext is corrupt.
+
+
+5. **Payload Decryption:**
+- Because both the Signature and the HMAC Tag are mathematically proven valid, Bob finally decrypts `payload.cipher` using the `HEX_KEY` and `HEX_IV`.
+- The plaintext `decrypted_message.txt` is written to disk.
+
