@@ -108,9 +108,6 @@ echo "[*] Firing OpenSSL s_client payload against server..."
 echo "[*] Forcing strict Root CA validation (-verify_return_error)..."
 echo "[*] Enforcing Strict Post-Quantum KEM negotiation..."
 
-# THE FIX: Embedded Expect Script
-# This spawns the client, waits patiently for the "SSL-Session" block to appear, 
-# captures everything, and THEN sends 'Q' to quit cleanly.
 expect -c "
     log_file client_debug.log
     spawn openssl s_client ${PROVIDER_ARGS[*]} -connect localhost:$SERVER_PORT -CAfile ${TARGET_DIR}/ca.crt -groups $STRICT_PQ_GROUPS -tls1_3 -verify_return_error
