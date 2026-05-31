@@ -183,11 +183,11 @@ Because the message is now serialized into a single `.pqp` packet stream, all co
 
 ## PQC-Messenger (Golang Edition)
 
-A production-ready, crypto-agile, Post-Quantum Cryptographic (PQC) file messenger built in Go 1.25. 
+A prototype, crypto-agile, Post-Quantum Cryptographic (PQC) file messenger built in Go 1.25. 
 
 This engine utilizes a **Hybrid KEM Architecture** (Classical Elliptic Curve + Lattice-based Cryptography) and a strict **Hash-and-Sign** paradigm to guarantee NIST Level 5 quantum resistance, seamless file transmission, and absolute memory safety across the CGO boundary.
 
-### 🚀 Features
+### Features
 
 - **Crypto-Agility:** Dynamically swap Key Encapsulation Mechanisms (KEMs), Digital Signatures, Hash functions, and Symmetric Ciphers based on recipient profiles.
 - **Hybrid Key Exchange:** Combines classical `X25519` with Post-Quantum KEMs to ensure security against both traditional and quantum adversaries.
@@ -195,7 +195,7 @@ This engine utilizes a **Hybrid KEM Architecture** (Classical Elliptic Curve + L
 - **CGO Boundary Protection:** Implements deep-copy byte cloning (`cloneBytes`) and a fixed-length Hash-and-Sign digest pipeline to prevent Go garbage-collector pointer corruption and dangling C-memory wipes.
 - **Air-Gapped PKI:** Generates offline public/private keyrings for secure, file-based identity routing.
 
-### 🛡️ Supported Cryptographic Primitives
+### Supported Cryptographic Primitives
 
 The engine interfaces natively with the C-based `liboqs` to support the latest FIPS 204/205 drafts and conservative pre-standardization algorithms:
 
@@ -207,7 +207,7 @@ The engine interfaces natively with the C-based `liboqs` to support the latest F
 | **Symmetric AEAD** | `AES-256-GCM`, `ChaCha20-Poly1305` |
 | **Key Derivation (KDF)** | `SHA-384`, `SHA-512`, `SHAKE-256` (Sponge XOF) |
 
-### 🛠️ Prerequisites
+### Prerequisites
 
 - **Go 1.25+** (Required for the latest `crypto` and `hash` interface optimizations).
 - **liboqs:** The Open Quantum Safe C library must be compiled and installed on your system.
@@ -237,7 +237,7 @@ export CGO_LDFLAGS="-L/usr/local/lib -L/usr/lib/x86_64-linux-gnu -loqs"
 go get github.com/open-quantum-safe/liboqs-go/oqs
 ```
 
-### 📦 Installation & Build
+### Installation & Build
 
 Clone the repository and build the interactive CLI binary:
 
@@ -248,7 +248,7 @@ go build -o pqc-messenger main.go
 
 ```
 
-### 💻 Usage Guide
+### Usage Guide
 
 Launch the interactive CLI:
 
@@ -278,12 +278,12 @@ Select **Option 3** to verify the cryptographic signature and decrypt the payloa
 - **Inputs needed:** Path to your private folder, path to the sender's public folder, and the `.pqp` packet.
 - **Output:** Upon mathematical verification of the signature and AEAD MAC tag, the engine outputs the decrypted file with a precise timestamp (e.g., `decrypted_msg_20260531_150405.txt`).
 
-## 🧠 Security Architecture Notes
+## Security Architecture Notes
 
 This framework addresses several notorious issues in Post-Quantum integration:
 
-1. **Dangling Pointers:** The `liboqs` C library aggressively frees memory structures. Our `cloneBytes` function ensures that extracted lattice keys are safely ported into Go's garbage-collected heap before the C thread terminates.
-2. **Fiat-Shamir Sensitivity:** Algorithms like ML-DSA are highly sensitive to data serialization. Our engine constructs a rigid byte-bundle combining the routing suite, ciphertext, nonce, and sender public key, strictly hashing it via `SHA-512` before passing it to the signature engine. This "Authenticated Negotiation" ensures an attacker cannot silently downgrade the cipher suite inside the JSON.
+1. **Dangling Pointers:** The `liboqs` C library aggressively frees memory structures. My `cloneBytes` function ensures that extracted lattice keys are safely ported into Go's garbage-collected heap before the C thread terminates.
+2. **Fiat-Shamir Sensitivity:** Algorithms like ML-DSA are highly sensitive to data serialization. My engine constructs a rigid byte-bundle combining the routing suite, ciphertext, nonce, and sender public key, strictly hashing it via `SHA-512` before passing it to the signature engine. This "Authenticated Negotiation" ensures an attacker cannot silently downgrade the cipher suite inside the JSON.
 
 ---
 
