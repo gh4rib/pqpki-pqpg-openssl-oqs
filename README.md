@@ -115,7 +115,7 @@ The script inspects both the generated `server.crt` file on disk and the live te
 
 ---
 
-## PQC Simple Messenger
+## Post-Quabtum Privacy Guard
 
 A simple mirror (probably not safe for production usage) of Signal Messenger and ProtonMail's cryptographic architecture.
 
@@ -181,9 +181,9 @@ Because the message is now serialized into a single `.pqp` packet stream, all co
 
 ---
 
-## PQC-Messenger (Golang Edition) [Link](https://github.com/gh4rib/pqc-messenger-go)
+## PQPG (Golang Edition using liboqs) [Link]([https://github.com/gh4rib/pqc-messenger-go](https://github.com/gh4rib/pqpg-go))
 
-A prototype, crypto-agile, Post-Quantum Cryptographic (PQC) file messenger built in Go 1.25. 
+A prototype, crypto-agile, Post-Quantum Cryptographic (PQC) Privacy Guard built in Go 1.25. 
 
 This engine utilizes a **Hybrid KEM Architecture** (Classical Elliptic Curve + Lattice-based Cryptography) and a strict **Hash-and-Sign** paradigm to guarantee NIST Level 5 quantum resistance, seamless file transmission, and absolute memory safety across the CGO boundary.
 
@@ -244,7 +244,7 @@ Clone the repository and build the interactive CLI binary:
 ```bash
 cd pqc-messaging-go
 go mod tidy
-go build -o pqc-messenger main.go
+go build -o pqpg main.go
 
 ```
 
@@ -253,7 +253,7 @@ go build -o pqc-messenger main.go
 Launch the interactive CLI:
 
 ```bash
-./pqc-messenger
+./pqpg
 
 ```
 
