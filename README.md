@@ -181,7 +181,7 @@ Because the message is now serialized into a single `.pqp` packet stream, all co
 
 ---
 
-## PQC-Messenger (Golang Edition)
+## PQC-Messenger (Golang Edition) [Link](https://github.com/gh4rib/pqc-messenger-go)
 
 A prototype, crypto-agile, Post-Quantum Cryptographic (PQC) file messenger built in Go 1.25. 
 
